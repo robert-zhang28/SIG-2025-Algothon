@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 from main import getMyPosition as getPosition
+from main import calcPL_per_instrument as calcPL_per_inst
 
 nInst = 0
 nt = 0
@@ -73,3 +74,9 @@ print ("StdDev(PL): %.2lf" % plstd)
 print ("annSharpe(PL): %.2lf " % sharpe)
 print ("totDvolume: %.0lf " % dvol)
 print ("Score: %.2lf" % score)
+
+
+mean_pl, std_pl, sharpe, dailyPL_per_inst = calcPL_per_inst(prcAll, 750)
+
+for i in range(50):
+    print(f"Instrument {i}: mean PL = {mean_pl[i]:.2f}, std = {std_pl[i]:.2f}, sharpe = {sharpe[i]:.2f}")

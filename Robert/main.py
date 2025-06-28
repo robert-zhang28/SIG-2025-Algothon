@@ -5,11 +5,13 @@ import statsmodels.api as sm
 import statsmodels.tsa.stattools as ts
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.stattools import acf
+import pred_model as pm
 
 ##### TODO #########################################
 ### IMPLEMENT 'getMyPosition' FUNCTION #############
 ### TO RUN, RUN 'eval.py' ##########################
 
+TIME_INTERVAL = 200
 
 class Algorithm:
     """
@@ -28,6 +30,7 @@ class Algorithm:
         self.stationary_instruments = None
         self.paired_instruments = None
         self.prices = None
+        self.quadratic_models = {}
 
     def loadPrices(self):
         df=pd.read_csv(self.filename, sep='\s+', header=None, index_col=None)
@@ -36,6 +39,7 @@ class Algorithm:
         self.nInst = nInst
         self.currentPos = np.zeros(self.nInst)
         self.prices = (df.values).T
+        return self.prices
 
     # prob just do correlation matrix and find highest correlations
     # need a bench mark correlation tho
@@ -175,8 +179,31 @@ class Algorithm:
 
         dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
         adx = dx.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-
         return adx
+    
+    def compute_rsi(self, prices, window=14):
+        delta = np.diff(prices)
+        up = np.where(delta > 0, delta, 0)
+        down = np.where(delta < 0, -delta, 0)
+
+        roll_up = pd.Series(up).rolling(window=window).mean()
+        roll_down = pd.Series(down).rolling(window=window).mean()
+
+        rs = roll_up / roll_down
+        rsi = 100 - (100 / (1 + rs))
+        return rsi.values
+        
+    def train_models(self):
+        for i in range(self.nInst):
+            prices = self.prices[i]
+            try:
+                model = pm.QuadraticRegressionModel(degree=2, lookback=5)
+                model.fit(prices)
+                self.models[i] = model
+            except Exception as e:
+                print(f"Skipping instrument {i} due to error: {e}")
+        
+        
         
 #NOTE: the sharpe ratios for the stocks being used on this strat are very bad
 def trend_following(prcSoFar, long_window, short_window, adx_window=14, adx_threshold=30):
@@ -222,7 +249,6 @@ def trend_following(prcSoFar, long_window, short_window, adx_window=14, adx_thre
         else:
             # ADX too low = no strong trend, close position
             positions[i] = 0
-            
     return positions
 
 #TODO: possibly find a better way of doing the signals other than just a simple threshold - maybe RSI?
@@ -253,8 +279,22 @@ def mean_reversion(stationary_instruments, prcSoFar, window, threshold):
 #TODO: start implementing getMyPosition
 def getMyPosition(prcSoFar):
     (nins, nt) = prcSoFar.shape
+    
+    if algo.currentPos is None:
+        algo.currentPos = np.zeros(prcSoFar.shape[0])
+        
     if nt < algo.window:
         return algo.currentPos
+    
+    if algo.stationary_pairs is None or nt % TIME_INTERVAL == 0:
+        algo.find_pairs(0.8)
+        algo.test_coint()
+        algo.test_spread_stationarity()
+        algo.set_paired_instruments()
+        algo.test_stationary_instruments()
+        # res = algo.get_trend_instruments()
+        # print(res)
+        # print(len(res)) 
     
     for i, j, corr in algo.stationary_pairs:
         inst1 = prcSoFar[i]
@@ -299,17 +339,66 @@ def getMyPosition(prcSoFar):
         algo.currentPos[i] = trend_following_pos[i]
     return algo.currentPos
 
+def calcPL_per_instrument(prcHist, numTestDays):
+    cash = 0
+    curPos = np.zeros(algo.nInst)
+    totDVolume = 0
+    (_, nt) = prcHist.shape
+    startDay = nt + 1 - numTestDays
+    
+    # Initialize daily PnL array per instrument
+    dailyPL_per_inst = np.zeros((algo.nInst, numTestDays))
+    
+    value = 0
+    
+    for t in range(startDay, nt+1):
+        prcHistSoFar = prcHist[:, :t]
+        curPrices = prcHistSoFar[:, -1]
+        
+        if (t < nt):
+            newPosOrig = getMyPosition(prcHistSoFar)
+            posLimits = np.array([int(x) for x in 10000 / curPrices])
+            newPos = np.clip(newPosOrig, -posLimits, posLimits)
+            deltaPos = newPos - curPos
+            
+            dvolumes = curPrices * np.abs(deltaPos)
+            dvolume = np.sum(dvolumes)
+            totDVolume += dvolume
+            
+            comm = dvolume * 0.0005
+            cash -= curPrices.dot(deltaPos) + comm
+        else:
+            newPos = np.array(curPos)
+        
+        # Calculate daily PnL per instrument:
+        # PnL for each instrument = position[i] * (price[t] - price[t-1])
+        if t > startDay:
+            price_change = prcHist[:, t-1] - prcHist[:, t-2]
+            dailyPL = curPos * price_change
+            dailyPL_per_inst[:, t - startDay - 1] = dailyPL
+        
+        curPos = np.array(newPos)
+        
+        posValue = curPos.dot(curPrices)
+        value = cash + posValue
+    
+    # Now compute metrics per instrument:
+    mean_pl = np.mean(dailyPL_per_inst, axis=1)
+    std_pl = np.std(dailyPL_per_inst, axis=1)
+    sharpe = np.zeros(algo.nInst)
+    
+    # Annualize assuming 249 trading days
+    for i in range(algo.nInst):
+        if std_pl[i] > 0:
+            sharpe[i] = np.sqrt(249) * mean_pl[i] / std_pl[i]
+        else:
+            sharpe[i] = 0
+    
+    return mean_pl, std_pl, sharpe, dailyPL_per_inst
+
+
 
 pricesFile = "prices.txt"
 algo = Algorithm(pricesFile)
-algo.loadPrices()
-algo.find_pairs(0.8)
-algo.test_coint()
-algo.test_spread_stationarity()
-algo.set_paired_instruments()
-algo.test_stationary_instruments()
-res = algo.get_trend_instruments()
-print(res)
-print(len(res))
-
+prcAll = algo.loadPrices()
 print ("Loaded %d instruments for %d days" % (algo.nInst, algo.nt))
