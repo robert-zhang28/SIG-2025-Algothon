@@ -266,8 +266,8 @@ def trend_following(prcSoFar, long_window, short_window, adx_window=14, adx_thre
         # Calculate ADX (requires high, low, close - approximate with close here for simplicity)
         # Use close for all three
         df = pd.DataFrame({'close': prices})
-        df['high'] = prices
-        df['low'] = prices
+        df['high'] = 1.01 * df['close']
+        df['low'] = 0.99 * df['close']
         
         adx_series = algo.adx(df['high'], df['low'], df['close'], period=adx_window)
         latest_adx = adx_series.iloc[-1]
@@ -332,7 +332,7 @@ def getMyPosition(prcSoFar):
         algo.update_volatilies(prcSoFar)
     
     if algo.stationary_pairs is None or nt % TIME_INTERVAL == 0:
-        algo.find_pairs(0.8)
+        algo.find_pairs(0.6)
         algo.test_coint()
         algo.test_spread_stationarity()
         algo.set_paired_instruments()
@@ -357,8 +357,8 @@ def getMyPosition(prcSoFar):
         spread = inst1 - (alpha + beta * inst2)
         # mean_spread = np.mean(spread)
         # std_spread = np.std(spread)
-        mean_spread = np.mean(spread[-200:])
-        std_spread = np.std(spread[-200:])
+        mean_spread = np.mean(spread)
+        std_spread = np.std(spread)
 
         if std_spread == 0:
             continue  # Avoid division by zero
