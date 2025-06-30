@@ -12,6 +12,8 @@ import pred_model as pm
 ### TO RUN, RUN 'eval.py' ##########################
 
 TIME_INTERVAL = 200
+MIN_VOLATILITY = 0.01
+CAPITAL = 10000 * 50
 
 class Algorithm:
     """
@@ -31,6 +33,8 @@ class Algorithm:
         self.paired_instruments = None
         self.prices = None
         self.quadratic_models = {}
+        self.volatility = {}
+        self.inverse_vol_weights = None
 
     def loadPrices(self):
         df=pd.read_csv(self.filename, sep='\s+', header=None, index_col=None)
@@ -192,6 +196,44 @@ class Algorithm:
         rs = roll_up / roll_down
         rsi = 100 - (100 / (1 + rs))
         return rsi.values
+    
+    def calculate_volatility(self, prices, lookback=30):
+        """Calculate annualized volatility based on daily returns"""
+        if len(prices) < 2:
+            return MIN_VOLATILITY
+            
+        returns = np.diff(prices) / prices[:-1]
+        if len(returns) < lookback:
+            return MIN_VOLATILITY
+            
+        recent_returns = returns[-lookback:]
+        daily_vol = np.std(recent_returns)
+        annualized_vol = daily_vol * np.sqrt(252)
+        return max(annualized_vol, MIN_VOLATILITY)
+    
+    def compute_inverse_vol_weights(self, prcSoFar, lookback=30):
+        """Compute normalized inverse volatility weights for all instruments."""
+        weights = []
+        for i in range(self.nInst):
+            prices = prcSoFar[i]
+            if len(prices) < lookback + 1:
+                weights.append(0.0)
+                continue
+            returns = np.diff(prices[-lookback:]) / prices[-lookback:-1]
+            vol = np.std(returns)
+            inv_vol = 1.0 / max(vol, 1e-6)  # avoid div by 0
+            weights.append(inv_vol)
+        
+        weights = np.array(weights)
+        total = np.sum(weights)
+        if total > 0:
+            weights /= total
+        return weights
+        
+    def update_volatilies(self, prcSoFar):
+        for i in range(self.nInst):
+            self.volatility[i] = self.calculate_volatility(prcSoFar[i])
+        self.inverse_vol_weights = self.compute_inverse_vol_weights(prcSoFar)
         
     def train_models(self):
         for i in range(self.nInst):
@@ -286,6 +328,9 @@ def getMyPosition(prcSoFar):
     if nt < algo.window:
         return algo.currentPos
     
+    if nt % 7 == 0 or algo.inverse_vol_weights is None:
+        algo.update_volatilies(prcSoFar)
+    
     if algo.stationary_pairs is None or nt % TIME_INTERVAL == 0:
         algo.find_pairs(0.8)
         algo.test_coint()
@@ -296,6 +341,8 @@ def getMyPosition(prcSoFar):
         # print(res)
         # print(len(res)) 
     
+    weights = algo.inverse_vol_weights
+    #print(weights)
     for i, j, corr in algo.stationary_pairs:
         inst1 = prcSoFar[i]
         inst2 = prcSoFar[j]
@@ -308,17 +355,24 @@ def getMyPosition(prcSoFar):
 
         # Calculate spread and z-score
         spread = inst1 - (alpha + beta * inst2)
-        mean_spread = np.mean(spread)
-        std_spread = np.std(spread)
+        # mean_spread = np.mean(spread)
+        # std_spread = np.std(spread)
+        mean_spread = np.mean(spread[-200:])
+        std_spread = np.std(spread[-200:])
 
         if std_spread == 0:
             continue  # Avoid division by zero
 
         z = (spread[-1] - mean_spread) / std_spread
+        
+        # Volatility-adjusted position sizing
 
+        #TODO: figure out how to implement later not right now
+        
         max_pos_inst1 = int(10000 // price_i)
         max_pos_inst2 = int(10000 // price_j)
         amount = min(max_pos_inst1, max_pos_inst2)
+        
         if z > 1:
             algo.currentPos[i] -= amount
             algo.currentPos[j] += int(beta * amount)
@@ -337,6 +391,7 @@ def getMyPosition(prcSoFar):
     trend_instruments = algo.get_trend_instruments()
     for i in trend_instruments:
         algo.currentPos[i] = trend_following_pos[i]
+        
     return algo.currentPos
 
 def calcPL_per_instrument(prcHist, numTestDays):
@@ -393,7 +448,6 @@ def calcPL_per_instrument(prcHist, numTestDays):
             sharpe[i] = np.sqrt(249) * mean_pl[i] / std_pl[i]
         else:
             sharpe[i] = 0
-    
     return mean_pl, std_pl, sharpe, dailyPL_per_inst
 
 
