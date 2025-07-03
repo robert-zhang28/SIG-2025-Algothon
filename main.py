@@ -332,7 +332,7 @@ def getMyPosition(prcSoFar):
         algo.update_volatilies(prcSoFar)
     
     if algo.stationary_pairs is None or nt % TIME_INTERVAL == 0:
-        algo.find_pairs(0.6)
+        algo.find_pairs(0.8)
         algo.test_coint()
         algo.test_spread_stationarity()
         algo.set_paired_instruments()

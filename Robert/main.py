@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 import statsmodels.api as sm
 import statsmodels.tsa.stattools as ts
@@ -37,7 +36,7 @@ class Algorithm:
         self.inverse_vol_weights = None
 
     def loadPrices(self):
-        df=pd.read_csv(self.filename, sep='\s+', header=None, index_col=None)
+        df=pd.read_csv(self.filename, sep=r'\s+', header=None, index_col=None)
         (nt,nInst) = df.shape
         self.nt = nt
         self.nInst = nInst
@@ -293,6 +292,41 @@ def trend_following(prcSoFar, long_window, short_window, adx_window=14, adx_thre
             positions[i] = 0
     return positions
 
+def macd_trend_following(prcSoFar):
+    trend_instruments = algo.get_trend_instruments()
+    positions = np.zeros(prcSoFar.shape[0])
+    
+    for i in trend_instruments:
+        prices = prcSoFar[i]
+        if len(prices) < 26:  # Need at least 26 for EMA26
+            continue
+        
+        price_series = pd.Series(prices)
+        
+        # Calculate MACD components
+        ema12 = price_series.ewm(span=12, adjust=False).mean()
+        ema26 = price_series.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        
+        curr_macd = macd_line.iloc[-1]
+        curr_signal = signal_line.iloc[-1]
+        
+        if np.isnan(curr_macd) or np.isnan(curr_signal):
+            continue
+        
+        max_pos = int(10000 // prices[-1])
+        
+        # Trading logic: buy when MACD crosses above signal, sell when below
+        if curr_macd > curr_signal:
+            positions[i] = max_pos   # Long
+        elif curr_macd < curr_signal:
+            positions[i] = -max_pos  # Short
+        else:
+            positions[i] = 0         # Neutral
+    
+    return positions
+
 #TODO: possibly find a better way of doing the signals other than just a simple threshold - maybe RSI?
 def mean_reversion(stationary_instruments, prcSoFar, window, threshold):
     positions = np.zeros(prcSoFar.shape[0])
@@ -332,7 +366,7 @@ def getMyPosition(prcSoFar):
         algo.update_volatilies(prcSoFar)
     
     if algo.stationary_pairs is None or nt % TIME_INTERVAL == 0:
-        algo.find_pairs(0.6)
+        algo.find_pairs(0.8)
         algo.test_coint()
         algo.test_spread_stationarity()
         algo.set_paired_instruments()
@@ -382,16 +416,19 @@ def getMyPosition(prcSoFar):
         else:
             algo.currentPos[i] = 0
             algo.currentPos[j] = 0
-    
-    mean_rev_pos = mean_reversion(algo.stationary_instruments, prcSoFar, 60, 2.5)
-    for i in algo.stationary_instruments:
-        algo.currentPos[i] = mean_rev_pos[i]
+            
+    # mean_rev_pos = mean_reversion(algo.stationary_instruments, prcSoFar, 60, 2.5)
+    # for i in algo.stationary_instruments:
+    #     algo.currentPos[i] = mean_rev_pos[i]
         
-    trend_following_pos = trend_following(prcSoFar, 60, 30)
+    # trend_following_pos = trend_following(prcSoFar, 60, 30)
+    # trend_instruments = algo.get_trend_instruments()
+    # for i in trend_instruments:
+    #     algo.currentPos[i] = trend_following_pos[i]
     trend_instruments = algo.get_trend_instruments()
+    macd = macd_trend_following(prcSoFar)
     for i in trend_instruments:
-        algo.currentPos[i] = trend_following_pos[i]
-        
+        algo.currentPos[i] = macd[i]
     return algo.currentPos
 
 def calcPL_per_instrument(prcHist, numTestDays):
@@ -451,8 +488,8 @@ def calcPL_per_instrument(prcHist, numTestDays):
     return mean_pl, std_pl, sharpe, dailyPL_per_inst
 
 
-
 pricesFile = "prices.txt"
 algo = Algorithm(pricesFile)
+
 prcAll = algo.loadPrices()
 print ("Loaded %d instruments for %d days" % (algo.nInst, algo.nt))

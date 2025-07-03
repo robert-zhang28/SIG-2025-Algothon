@@ -29,7 +29,8 @@ def calcPL(prcHist, numTestDays):
     value = 0
     todayPLL = []
     (_,nt) = prcHist.shape
-    startDay = nt + 1 - numTestDays
+    #startDay = nt + 1 - numTestDays
+    startDay = 1
     for t in range(startDay, nt+1):
         prcHistSoFar = prcHist[:,:t]
         curPrices = prcHistSoFar[:,-1]
@@ -76,7 +77,7 @@ print ("totDvolume: %.0lf " % dvol)
 print ("Score: %.2lf" % score)
 
 
-mean_pl, std_pl, sharpe, dailyPL_per_inst = calcPL_per_inst(prcAll, 750)
+# mean_pl, std_pl, sharpe, dailyPL_per_inst = calcPL_per_inst(prcAll, 750)
 
-for i in range(50):
-    print(f"Instrument {i}: mean PL = {mean_pl[i]:.2f}, std = {std_pl[i]:.2f}, sharpe = {sharpe[i]:.2f}")
+# for i in range(50):
+#     print(f"Instrument {i}: mean PL = {mean_pl[i]:.2f}, std = {std_pl[i]:.2f}, sharpe = {sharpe[i]:.2f}")
