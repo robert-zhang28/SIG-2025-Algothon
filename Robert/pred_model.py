@@ -3,7 +3,7 @@ from sklearn.linear_model import LinearRegression  # Add this import
 from sklearn.preprocessing import PolynomialFeatures  # Add this import
 
 class QuadraticRegressionModel:
-    def __init__(self, degree=2, lookback=5):
+    def __init__(self, degree=2, lookback=30):
         self.degree = degree
         self.lookback = lookback
         self.poly = PolynomialFeatures(degree=self.degree)

@@ -366,7 +366,7 @@ def getMyPosition(prcSoFar):
         algo.update_volatilies(prcSoFar)
     
     if algo.stationary_pairs is None or nt % TIME_INTERVAL == 0:
-        algo.find_pairs(0.8)
+        algo.find_pairs(0.85)
         algo.test_coint()
         algo.test_spread_stationarity()
         algo.set_paired_instruments()
@@ -389,10 +389,11 @@ def getMyPosition(prcSoFar):
 
         # Calculate spread and z-score
         spread = inst1 - (alpha + beta * inst2)
-        # mean_spread = np.mean(spread)
-        # std_spread = np.std(spread)
-        mean_spread = np.mean(spread)
-        std_spread = np.std(spread)
+        # # mean_spread = np.mean(spread)
+        # # std_spread = np.std(spread)
+        mean_spread = np.mean(spread[:-1])
+        std_spread = np.std(spread[:-1])
+        z = (spread[-1] - mean_spread) / std_spread
 
         if std_spread == 0:
             continue  # Avoid division by zero
@@ -417,14 +418,15 @@ def getMyPosition(prcSoFar):
             algo.currentPos[i] = 0
             algo.currentPos[j] = 0
             
-    # mean_rev_pos = mean_reversion(algo.stationary_instruments, prcSoFar, 60, 2.5)
-    # for i in algo.stationary_instruments:
-    #     algo.currentPos[i] = mean_rev_pos[i]
+    mean_rev_pos = mean_reversion(algo.stationary_instruments, prcSoFar, 60, 2.5)
+    for i in algo.stationary_instruments:
+        algo.currentPos[i] = mean_rev_pos[i]
         
     # trend_following_pos = trend_following(prcSoFar, 60, 30)
     # trend_instruments = algo.get_trend_instruments()
     # for i in trend_instruments:
     #     algo.currentPos[i] = trend_following_pos[i]
+    
     trend_instruments = algo.get_trend_instruments()
     macd = macd_trend_following(prcSoFar)
     for i in trend_instruments:
@@ -490,6 +492,6 @@ def calcPL_per_instrument(prcHist, numTestDays):
 
 pricesFile = "prices.txt"
 algo = Algorithm(pricesFile)
-
 prcAll = algo.loadPrices()
+algo.train_models()
 print ("Loaded %d instruments for %d days" % (algo.nInst, algo.nt))

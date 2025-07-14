@@ -29,8 +29,8 @@ def calcPL(prcHist, numTestDays):
     value = 0
     todayPLL = []
     (_,nt) = prcHist.shape
-    #startDay = nt + 1 - numTestDays
-    startDay = 1
+    startDay = nt + 1 - numTestDays
+    #startDay = 1
     for t in range(startDay, nt+1):
         prcHistSoFar = prcHist[:,:t]
         curPrices = prcHistSoFar[:,-1]
@@ -66,7 +66,7 @@ def calcPL(prcHist, numTestDays):
 
 
 
-(meanpl, ret, plstd, sharpe, dvol) = calcPL(prcAll,750)
+(meanpl, ret, plstd, sharpe, dvol) = calcPL(prcAll,250)
 score = meanpl - 0.1*plstd
 print ("=====")
 print ("mean(PL): %.1lf" % meanpl)
